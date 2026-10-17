@@ -1,7 +1,7 @@
 """Step 1, with an image as the state, on llama.cpp: fast enough for a Raspberry Pi 5 CPU.
 
-Same decision model as experiments/text.py: the image, then each question ending in an "ANSWER:" slot,
-scored by the LM's logits for each option's single token, softmaxed over the options only.
+The image, then each question ending in an "ANSWER:" slot, scored by the LM's logits for each
+option's single token, softmaxed over the options only.
 One pass, no generation, no training. The forward pass runs in sone-vision, which is built
 and installed next to the environment's scripts with the package; this module renders the
 prompt, starts the binary once and sends it one image at a time.
@@ -29,8 +29,8 @@ from .questions import (
     Prediction,
     QuestionId,
     Questions,
-    choice_answer,
     render,
+    softmax_over_options,
 )
 
 
@@ -97,7 +97,7 @@ class VisionDecisionModel:
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True
         )
         ready = self.receive()
-        self.marker: str = ready["marker"]  # where the image goes in the prompt
+        self.image_marker: str = ready["marker"]  # where the image goes in the prompt
         self.load_ms: int = ready["load_ms"]
 
     def receive(self) -> dict:
@@ -115,7 +115,7 @@ class VisionDecisionModel:
             image.save(file.name)
             request = {
                 "image": file.name,
-                "prompt": f"Look at the image and answer each field.\n\nIMAGE:\n{self.marker}\n",
+                "prompt": f"Look at the image and answer each field.\n\nIMAGE:\n{self.image_marker}\n",
                 # Each question is evaluated on its own, so its ANSWER: slot is its last token.
                 "questions": [
                     {"text": ("\n" if k else "") + render(question_id, question),
@@ -128,7 +128,7 @@ class VisionDecisionModel:
             self.process.stdin.flush()
             response = self.receive()
         answers = {
-            question_id: choice_answer(list(question.criteria), logits)
+            question_id: softmax_over_options(list(question.criteria), logits)
             for (question_id, question), logits in zip(questions.items(), response["logits"])
         }
         return Prediction(answers=answers, input_tokens=response["tokens"])

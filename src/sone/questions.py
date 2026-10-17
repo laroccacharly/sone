@@ -46,8 +46,8 @@ class Prediction:
     output_tokens: int = 0  # a decision model never generates
 
 
-def choice_answer(options: list[OptionId], logits: list[float]) -> ChoiceAnswer:
-    """Softmax over this question's options only, as in sone.score."""
+def softmax_over_options(options: list[OptionId], logits: list[float]) -> ChoiceAnswer:
+    """Step 4: softmax over this question's options only, e.g. [6.79, 5.73] -> [0.74, 0.26]."""
     top = max(logits)
     weights = [math.exp(logit - top) for logit in logits]
     probabilities = [weight / sum(weights) for weight in weights]
