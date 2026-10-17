@@ -1,19 +1,18 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["huggingface_hub", "pillow"]
-# ///
 """Step 1, with an image as the state, on llama.cpp: fast enough for a Raspberry Pi 5 CPU.
 
-Same decision model as sone.py: the image, then each question ending in an "ANSWER:" slot,
+Same decision model as experiments/text.py: the image, then each question ending in an "ANSWER:" slot,
 scored by the LM's logits for each option's single token, softmaxed over the options only.
-One pass, no generation, no training. The forward pass runs in build/sone-vision (build it
-with `uv run build.py`); this script renders the prompt, starts the binary once and sends
-it one image at a time. vision-torch.py is the original PyTorch version.
+One pass, no generation, no training. The forward pass runs in sone-vision, which is built
+and installed next to the environment's scripts with the package; this module renders the
+prompt, starts the binary once and sends it one image at a time.
+experiments/vision_torch.py is the original PyTorch version.
 """
 
 import argparse
 import json
+import shutil
 import subprocess
+import sysconfig
 import tempfile
 import time
 import urllib.request
@@ -24,7 +23,7 @@ from pathlib import Path
 from huggingface_hub import hf_hub_download
 from PIL import Image
 
-from questions import (
+from .questions import (
     ChoiceQuestion,
     OptionId,
     Prediction,
@@ -34,7 +33,16 @@ from questions import (
     render,
 )
 
-BINARY = Path(__file__).resolve().parent / "build" / "sone-vision"
+
+def binary() -> Path:
+    """sone-vision, installed into this environment's scripts directory with the package."""
+    installed = Path(sysconfig.get_path("scripts")) / "sone-vision"
+    if installed.exists():
+        return installed
+    found = shutil.which("sone-vision")
+    if found is None:
+        raise FileNotFoundError(f"{installed} is missing; reinstall the sone package to build it")
+    return Path(found)
 
 
 @dataclass
@@ -76,10 +84,8 @@ def load_image(source: str, max_side: int) -> Image.Image:
 
 class VisionDecisionModel:
     def __init__(self, model: Model = MODELS["lfm"], threads: int | None = None):
-        if not BINARY.exists():
-            raise FileNotFoundError(f"{BINARY} is missing; build it with `uv run build.py`")
         command = [
-            str(BINARY),
+            str(binary()),
             "-m", hf_hub_download(model.repo, model.weights),
             "--mmproj", hf_hub_download(model.repo, model.mmproj),
         ]
@@ -144,7 +150,8 @@ EXAMPLE_QUESTIONS: Questions = {
     ),
 }
 
-if __name__ == "__main__":
+
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("images", nargs="*", default=[
         "http://images.cocodataset.org/val2017/000000000785.jpg",  # a skier
@@ -168,3 +175,7 @@ if __name__ == "__main__":
             for question_id, answer in prediction.answers.items():
                 print(f"  {question_id}: {answer.choice} {answer.probabilities}")
     decision_model.close()
+
+
+if __name__ == "__main__":
+    main()

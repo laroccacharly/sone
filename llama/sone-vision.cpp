@@ -1,6 +1,6 @@
 // Step 1 on llama.cpp: the scoring half of vision.py, for CPUs where PyTorch is too slow.
 //
-// A long-lived process driven by vision.py over stdin/stdout, one JSON object per line.
+// A long-lived process driven by sone/vision.py over stdin/stdout, one JSON object per line.
 // On startup it prints {"marker": ..., "load_ms": ...}; the marker is the text vision.py
 // puts in the prompt where the image goes. Each request then looks like
 //

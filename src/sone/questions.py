@@ -1,4 +1,4 @@
-"""The question schema and its prompt text, shared by sone.py and vision.py (no torch)."""
+"""The question schema and its prompt text, shared by vision.py and the experiments (no torch)."""
 
 import math
 from dataclasses import dataclass

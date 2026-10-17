@@ -1,0 +1,27 @@
+[build-system]
+requires = ["scikit-build-core>=0.11"]
+build-backend = "build_backend"
+backend-path = ["."]
+
+[project]
+name = "sone"
+version = "0.1.0"
+description = "Zero-shot choice decisions on images with a small VLM on llama.cpp"
+requires-python = ">=3.12"
+dependencies = ["huggingface_hub", "pillow"]
+
+[project.scripts]
+sone = "sone.vision:main"
+
+[tool.scikit-build]
+cmake.version = ">=3.28"
+cmake.source-dir = "llama"
+build-dir = "build/{wheel_tag}"
+# Only sone-vision; llama.cpp's own install rules would add its libraries and headers.
+install.components = ["sone"]
+wheel.packages = ["src/sone"]
+sdist.exclude = ["build", "vendor"]
+
+[tool.uv]
+# Rebuild sone-vision when the C++ side changes, not only pyproject.toml.
+cache-keys = [{ file = "pyproject.toml" }, { file = "llama/**" }, { file = "build_backend.py" }]

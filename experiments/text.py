@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12,<3.14"
-# dependencies = ["torch", "transformers>=4.51"]
+# dependencies = ["torch", "transformers>=4.51", "sone"]
 #
 # [[tool.uv.index]]
 # name = "pytorch-cpu"
@@ -9,6 +9,7 @@
 #
 # [tool.uv.sources]
 # torch = { index = "pytorch-cpu" }
+# sone = { path = ".." }
 # ///
 """Step 1: a minimal System 1 decision model. Inference only, `choice` questions only.
 
@@ -29,7 +30,7 @@ from typing import NewType
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from questions import (
+from sone.questions import (
     ChoiceAnswer,
     ChoiceQuestion,
     OptionId,

@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12,<3.14"
-# dependencies = ["torch", "torchvision", "transformers>=5.2", "pillow"]
+# dependencies = ["torch", "torchvision", "transformers>=5.2", "pillow", "sone"]
 #
 # [[tool.uv.index]]
 # name = "pytorch-cpu"
@@ -10,12 +10,13 @@
 # [tool.uv.sources]
 # torch = { index = "pytorch-cpu" }
 # torchvision = { index = "pytorch-cpu" }
+# sone = { path = ".." }
 # ///
 """Step 1, with an image as the state: the same decision model on a vision-language backbone.
 
 The image goes through the VLM's vision encoder and lands in the prompt as image tokens.
 The questions follow as text, each ending with an "ANSWER:" slot, and are scored exactly
-as in sone.py: the slot's hidden state against the output-embedding rows of the option
+as in text.py: the slot's hidden state against the output-embedding rows of the option
 names. One forward pass, no generation, no training.
 """
 
@@ -28,7 +29,7 @@ import torch
 from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
-from sone import (
+from text import (
     ChoiceQuestion,
     OptionId,
     Prediction,
