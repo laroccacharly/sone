@@ -84,8 +84,8 @@ class Prediction:
     output_tokens: int = 0  # a decision model never generates
 
 
-def encode(tokenizer, state: str, questions: Questions) -> Encoded:
-    """Render state + schema into token ids and remember where each answer slot is."""
+def encode_questions(tokenizer, ids: list[TokenId], questions: Questions) -> Encoded:
+    """Append each question to an already encoded prefix and remember where its answer slot is."""
 
     def tokens(text: str) -> list[TokenId]:
         return [TokenId(t) for t in tokenizer.encode(text)]
@@ -100,7 +100,7 @@ def encode(tokenizer, state: str, questions: Questions) -> Encoded:
             )
         return ids[0]
 
-    ids = tokens(f"Read the state and answer each field.\n\nSTATE:\n{state}\n")
+    ids = list(ids)
     fields: list[Field] = []
     for question_id, question in questions.items():
         criteria = question.criteria
@@ -119,6 +119,61 @@ def encode(tokenizer, state: str, questions: Questions) -> Encoded:
     return Encoded(ids=ids, fields=fields)
 
 
+def encode(tokenizer, state: str, questions: Questions) -> Encoded:
+    """Render state + schema into token ids and remember where each answer slot is."""
+    prefix = tokenizer.encode(f"Read the state and answer each field.\n\nSTATE:\n{state}\n")
+    return encode_questions(tokenizer, [TokenId(t) for t in prefix], questions)
+
+
+def score(
+    hidden: torch.Tensor, fields: list[Field], option_table: torch.Tensor
+) -> dict[QuestionId, ChoiceAnswer]:
+    """Score each field's answer slot against its options' rows of the output embedding."""
+    answers: dict[QuestionId, ChoiceAnswer] = {}
+    for field in fields:
+        # Shapes below use real values from the billing example, question "department".
+        # d = 1024 (Qwen3-0.6B hidden size), vocab = 151,936, sequence = 122 tokens.
+        #
+        # 1. The slot: the backbone's vector at the ":" of "ANSWER:".
+        #    hidden: [122, 1024] -> slot: [1024] = [-2.63, -14.91, -1.46, ...]
+        #    It encodes "what token should come next", i.e. the model's answer.
+        slot = hidden[field.answer_position]
+
+        # 2. One vector per option, looked up in the LM's output embedding table.
+        #    option_table: [151936, 1024], one row per vocabulary token.
+        #    "billing"   -> token 33531 (" billing")   -> row [1024]
+        #    "technical" -> token 10916 (" technical") -> row [1024]
+        #    "other"     -> token 1008  (" other")     -> row [1024]
+        #    Stacked: options: [3, 1024], one row per option. This is the old "W",
+        #    but built from the question at inference time, so it can have any number of rows.
+        option_ids = list(field.options)  # ["billing", "technical", "other"]
+        options = option_table[list(field.options.values())]
+
+        # 3. Score: dot product of every option row with the slot.
+        #    [3, 1024] @ [1024] -> logits: [3] = [19.79, 13.79, 17.90]
+        #    Toy version with d = 3:
+        #        slot    =  [1, 0, 2]
+        #        options = [[2, 0, 1],   billing:   1*2 + 0*0 + 2*1 = 4
+        #                   [0, 1, 0],   technical: 1*0 + 0*1 + 2*0 = 0
+        #                   [1, 1, 1]]   other:     1*1 + 0*1 + 2*1 = 3
+        #        logits  =  [4, 0, 3]
+        #    Because the backbone's final layer is followed by exactly this table,
+        #    each logit is the LM's score for that option's name being the next token.
+        logits = options.float() @ slot.float()
+
+        # 4. Softmax over this question's options only: exp, then divide by the sum.
+        #    Toy: exp([4, 0, 3]) = [54.6, 1.0, 20.1], sum 75.7 -> [0.72, 0.01, 0.27]
+        #    Real: [19.79, 13.79, 17.90] -> [0.87, 0.00, 0.13]
+        probabilities = logits.softmax(-1)
+        best = int(probabilities.argmax())
+        answers[field.question_id] = ChoiceAnswer(
+            choice=option_ids[best],
+            confidence=round(float(probabilities[best]), 3),
+            probabilities=dict(zip(option_ids, (round(float(p), 3) for p in probabilities))),
+        )
+    return answers
+
+
 class DecisionModel:
     def __init__(self, name: str = MODEL):
         self.tokenizer = AutoTokenizer.from_pretrained(name)
@@ -132,48 +187,7 @@ class DecisionModel:
     def predict(self, state: str, questions: Questions) -> Prediction:
         encoded = encode(self.tokenizer, state, questions)
         hidden = self.backbone.model(torch.tensor([encoded.ids])).last_hidden_state[0]  # [seq, d]
-        answers: dict[QuestionId, ChoiceAnswer] = {}
-        for field in encoded.fields:
-            # Shapes below use real values from the billing example, question "department".
-            # d = 1024 (Qwen3-0.6B hidden size), vocab = 151,936, sequence = 122 tokens.
-            #
-            # 1. The slot: the backbone's vector at the ":" of "ANSWER:".
-            #    hidden: [122, 1024] -> slot: [1024] = [-2.63, -14.91, -1.46, ...]
-            #    It encodes "what token should come next", i.e. the model's answer.
-            slot = hidden[field.answer_position]
-
-            # 2. One vector per option, looked up in the LM's output embedding table.
-            #    option_table: [151936, 1024], one row per vocabulary token.
-            #    "billing"   -> token 33531 (" billing")   -> row [1024]
-            #    "technical" -> token 10916 (" technical") -> row [1024]
-            #    "other"     -> token 1008  (" other")     -> row [1024]
-            #    Stacked: options: [3, 1024], one row per option. This is the old "W",
-            #    but built from the question at inference time, so it can have any number of rows.
-            option_ids = list(field.options)  # ["billing", "technical", "other"]
-            options = self.option_table[list(field.options.values())]
-
-            # 3. Score: dot product of every option row with the slot.
-            #    [3, 1024] @ [1024] -> logits: [3] = [19.79, 13.79, 17.90]
-            #    Toy version with d = 3:
-            #        slot    =  [1, 0, 2]
-            #        options = [[2, 0, 1],   billing:   1*2 + 0*0 + 2*1 = 4
-            #                   [0, 1, 0],   technical: 1*0 + 0*1 + 2*0 = 0
-            #                   [1, 1, 1]]   other:     1*1 + 0*1 + 2*1 = 3
-            #        logits  =  [4, 0, 3]
-            #    Because the backbone's final layer is followed by exactly this table,
-            #    each logit is the LM's score for that option's name being the next token.
-            logits = options @ slot
-
-            # 4. Softmax over this question's options only: exp, then divide by the sum.
-            #    Toy: exp([4, 0, 3]) = [54.6, 1.0, 20.1], sum 75.7 -> [0.72, 0.01, 0.27]
-            #    Real: [19.79, 13.79, 17.90] -> [0.87, 0.00, 0.13]
-            probabilities = logits.softmax(-1)
-            best = int(probabilities.argmax())
-            answers[field.question_id] = ChoiceAnswer(
-                choice=option_ids[best],
-                confidence=round(float(probabilities[best]), 3),
-                probabilities=dict(zip(option_ids, (round(float(p), 3) for p in probabilities))),
-            )
+        answers = score(hidden, encoded.fields, self.option_table)
         return Prediction(answers=answers, input_tokens=len(encoded.ids))
 
 
