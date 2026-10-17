@@ -29,24 +29,20 @@ from typing import NewType
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from questions import (
+    ChoiceAnswer,
+    ChoiceQuestion,
+    OptionId,
+    Prediction,
+    QuestionId,
+    Questions,
+    render,
+)
+
 MODEL = "Qwen/Qwen3-0.6B"
 
-QuestionId = NewType("QuestionId", str)  # e.g. "department"
-OptionId = NewType("OptionId", str)  # e.g. "billing"
 TokenId = NewType("TokenId", int)  # an entry of the tokenizer's vocabulary
 Position = NewType("Position", int)  # an index into the encoded token sequence
-
-
-# --- Input -------------------------------------------------------------------
-
-
-@dataclass
-class ChoiceQuestion:
-    instructions: str
-    criteria: dict[OptionId, str]  # option -> description
-
-
-Questions = dict[QuestionId, ChoiceQuestion]
 
 
 # --- Encoding ----------------------------------------------------------------
@@ -65,23 +61,6 @@ class Field:
 class Encoded:
     ids: list[TokenId]
     fields: list[Field]
-
-
-# --- Output ------------------------------------------------------------------
-
-
-@dataclass
-class ChoiceAnswer:
-    choice: OptionId
-    confidence: float
-    probabilities: dict[OptionId, float]
-
-
-@dataclass
-class Prediction:
-    answers: dict[QuestionId, ChoiceAnswer]
-    input_tokens: int
-    output_tokens: int = 0  # a decision model never generates
 
 
 def encode_questions(tokenizer, ids: list[TokenId], questions: Questions) -> Encoded:
@@ -103,16 +82,12 @@ def encode_questions(tokenizer, ids: list[TokenId], questions: Questions) -> Enc
     ids = list(ids)
     fields: list[Field] = []
     for question_id, question in questions.items():
-        criteria = question.criteria
-        lines = [f"\nFIELD {question_id}: {question.instructions}"]
-        lines += [f"- {option}: {description}" for option, description in criteria.items()]
-        lines.append(f"Pick one of: {', '.join(criteria)}.\nANSWER:")
-        ids += tokens("\n".join(lines))
+        ids += tokens(render(question_id, question))
         fields.append(
             Field(
                 question_id=question_id,
                 answer_position=Position(len(ids) - 1),
-                options={option: single_token(option) for option in criteria},
+                options={option: single_token(option) for option in question.criteria},
             )
         )
         ids += tokens("\n")
