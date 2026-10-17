@@ -16,6 +16,10 @@ A state and any number of choice questions go into ONE prompt and ONE forward pa
 Each question ends with an "ANSWER:" slot. The backbone's hidden state at that slot
 is scored against a vector for each option name, so the number of options and
 questions comes from the input, not from the weights. No text is generated.
+
+Nothing is trained: the scores come from the LM's own output layer. The price is that
+every option name must be exactly one token in the vocabulary (" billing" is,
+" account_access" is not), because the slot only predicts one next token.
 """
 
 import sys
@@ -54,7 +58,7 @@ class Field:
 
     question_id: QuestionId
     answer_position: Position  # the token of this question's ANSWER: slot
-    options: dict[OptionId, list[TokenId]]  # option -> token ids of its name
+    options: dict[OptionId, TokenId]  # option -> the single token of its name
 
 
 @dataclass
@@ -86,6 +90,16 @@ def encode(tokenizer, state: str, questions: Questions) -> Encoded:
     def tokens(text: str) -> list[TokenId]:
         return [TokenId(t) for t in tokenizer.encode(text)]
 
+    def single_token(option: OptionId) -> TokenId:
+        # The token that would follow "ANSWER:" is " billing", with a leading space.
+        ids = tokens(f" {option}")
+        if len(ids) != 1:
+            pieces = [tokenizer.decode([i]) for i in ids]
+            raise ValueError(
+                f"option {option!r} must be a single token, but it splits into {pieces}"
+            )
+        return ids[0]
+
     ids = tokens(f"Read the state and answer each field.\n\nSTATE:\n{state}\n")
     fields: list[Field] = []
     for question_id, question in questions.items():
@@ -98,8 +112,7 @@ def encode(tokenizer, state: str, questions: Questions) -> Encoded:
             Field(
                 question_id=question_id,
                 answer_position=Position(len(ids) - 1),
-                # The token that would follow "ANSWER:" is " billing", with a leading space.
-                options={option: tokens(f" {option}") for option in criteria},
+                options={option: single_token(option) for option in criteria},
             )
         )
         ids += tokens("\n")
@@ -131,14 +144,13 @@ class DecisionModel:
 
             # 2. One vector per option, looked up in the LM's output embedding table.
             #    option_table: [151936, 1024], one row per vocabulary token.
-            #    "billing"   -> tokens [33531] (" billing") -> rows [1, 1024] -> mean -> [1024]
-            #    "technical" -> tokens [10916]              -> rows [1, 1024] -> mean -> [1024]
-            #    "other"     -> tokens [1008]               -> rows [1, 1024] -> mean -> [1024]
-            #    The mean only matters for multi-token names like "wire_transfer".
+            #    "billing"   -> token 33531 (" billing")   -> row [1024]
+            #    "technical" -> token 10916 (" technical") -> row [1024]
+            #    "other"     -> token 1008  (" other")     -> row [1024]
             #    Stacked: options: [3, 1024], one row per option. This is the old "W",
             #    but built from the question at inference time, so it can have any number of rows.
             option_ids = list(field.options)  # ["billing", "technical", "other"]
-            options = torch.stack([self.option_table[t].mean(0) for t in field.options.values()])
+            options = self.option_table[list(field.options.values())]
 
             # 3. Score: dot product of every option row with the slot.
             #    [3, 1024] @ [1024] -> logits: [3] = [19.79, 13.79, 17.90]
