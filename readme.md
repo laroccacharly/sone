@@ -3,6 +3,10 @@
 Zero-shot choice decisions on images: a small vision-language model scores each
 question's options in one forward pass on llama.cpp, fast enough for a Raspberry Pi 5 CPU.
 
+## Demo
+
+[![sone demo](https://img.youtube.com/vi/Psu5gCObilg/maxresdefault.jpg)](https://youtu.be/Psu5gCObilg)
+
 ## Requirements
 
 - Python 3.12 or newer and [uv](https://docs.astral.sh/uv/)
