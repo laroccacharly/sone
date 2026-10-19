@@ -8,6 +8,8 @@ name = "sone"
 version = "0.1.0"
 description = "Zero-shot choice decisions on images with a small VLM on llama.cpp"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = ["huggingface_hub", "pillow"]
 
 [project.scripts]
