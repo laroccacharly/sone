@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sone · vision decisions on a Raspberry Pi 5</title>
+<style>
+  :root {
+    --ink: #1b1d1f;
+    --muted: #6b7075;
+    --faint: #e9e7e2;
+    --paper: #f7f5f0;
+    --card: #fffefb;
+    --accent: #d9480f;
+    --accent-soft: #fbe3d6;
+    --cool: #8a9099;
+    --cool-soft: #d9dce0;
+    --good: #2b8a3e;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font: 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 28px 36px;
+  }
+  main { width: 100%; max-width: 1440px; display: grid; gap: 18px; grid-template-rows: auto; }
+
+  header { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
+  .eyebrow { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  h1 { font-size: 30px; font-weight: 650; letter-spacing: -.02em; margin-top: 4px; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .setup { color: var(--muted); max-width: 640px; text-align: right; font-size: 13px; }
+  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--faint); padding: 1px 5px; border-radius: 4px; }
+
+  .kpis { display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr; gap: 14px; }
+  .kpi { background: var(--card); border: 1px solid var(--faint); border-radius: 14px; padding: 16px 18px; }
+  .kpi.hero { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .kpi .value { font-size: 40px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05; }
+  .kpi.hero .value { color: #ffb08a; }
+  .kpi .value small { font-size: 18px; font-weight: 600; letter-spacing: 0; margin-left: 3px; }
+  .kpi .label { font-weight: 600; margin-top: 6px; }
+  .kpi .note { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .kpi.hero .note { color: #b9bec4; }
+
+  .panels { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 14px; min-height: 0; }
+  .panel { background: var(--card); border: 1px solid var(--faint); border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .panel h2 { font-size: 15px; font-weight: 650; }
+  .panel h2 span { font-weight: 400; color: var(--muted); }
+  .panel .foot { margin-top: auto; color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--faint); padding-top: 10px; }
+
+  .rows { display: grid; gap: 9px; }
+  .row { display: grid; grid-template-columns: 210px 1fr 62px; align-items: center; gap: 10px; }
+  .row .name { font-size: 13px; line-height: 1.25; }
+  .row .name b { font-weight: 600; }
+  .row .name i { font-style: normal; color: var(--muted); font-size: 12px; display: block; }
+  .track { height: 18px; position: relative; }
+  .bar { height: 100%; border-radius: 4px; background: var(--cool-soft); }
+  .bar.win { background: var(--accent); }
+  .bar.dnf { background: repeating-linear-gradient(135deg, var(--cool-soft) 0 6px, transparent 6px 11px); width: 100%; }
+  .row .t { text-align: right; font-weight: 650; font-size: 13.5px; }
+  .row .t.win { color: var(--accent); }
+  .target { position: absolute; top: -5px; bottom: -5px; border-left: 2px dashed var(--good); }
+  .target-band { position: absolute; top: -4px; bottom: -4px; background: rgba(43,138,62,.09); border-radius: 3px; }
+  .legend { display: flex; gap: 16px; color: var(--muted); font-size: 12px; align-items: center; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  .group { display: grid; gap: 4px; }
+  .group .name { font-size: 13px; font-weight: 600; }
+  .pair { display: grid; grid-template-columns: 74px 1fr 46px; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+  .pair .track { height: 14px; }
+  .pair .t { text-align: right; color: var(--ink); font-weight: 650; }
+
+  .split { display: grid; grid-template-columns: 1fr auto auto; gap: 8px 18px; align-items: baseline; }
+  .split .h { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); text-align: right; }
+  .split .k { font-size: 13px; }
+  .split .k i { display: block; font-style: normal; color: var(--muted); font-size: 12px; }
+  .split .v { text-align: right; font-weight: 650; font-size: 18px; letter-spacing: -.01em; }
+  .split .v.pi { color: var(--accent); }
+  .split hr { grid-column: 1 / -1; border: 0; border-top: 1px solid var(--faint); }
+
+  footer { display: flex; justify-content: space-between; gap: 24px; color: var(--muted); font-size: 12.5px; }
+  footer b { color: var(--ink); font-weight: 600; }
+  .ok { color: var(--good); font-weight: 600; }
+  @media (max-width: 1360px), (max-height: 820px) {
+    body { padding: 18px 24px; font-size: 13px; }
+    main { gap: 12px; }
+    h1 { font-size: 24px; }
+    .setup { max-width: 480px; font-size: 12px; }
+    .kpi { padding: 12px 16px; }
+    .kpi .value { font-size: 32px; }
+    .panel { padding: 14px 16px; gap: 10px; }
+    .rows { gap: 10px !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">sone · step 1 on images · October 2026</div>
+      <h1>“Is there a person?” in <em>1.2 s</em> on a Raspberry Pi 5</h1>
+    </div>
+    <p class="setup">
+      One forward pass per image, scored at the <code>ANSWER:</code> slot; no text is generated.
+      Pi 5: 4× Cortex-A76, 8 GB, no bf16. Laptop: Ryzen 5 7640HS, 12 threads.
+      Times are per image, warm, CPU only.
+    </p>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi hero">
+      <div class="value">1.2<small>s</small></div>
+      <div class="label">per image on the Pi 5</div>
+      <div class="note">LFM2.5-VL-450M on llama.cpp, image at 256 px. Target was 1–2 s.</div>
+    </div>
+    <div class="kpi">
+      <div class="value">11×</div>
+      <div class="label">faster than PyTorch on the Pi</div>
+      <div class="note">vs 13–15 s for Qwen3.5-0.8B in fp32 at 640 px</div>
+    </div>
+    <div class="kpi">
+      <div class="value">1.6×</div>
+      <div class="label">slower with Homebrew</div>
+      <div class="note">2.1 s vs 1.3 s: build llama.cpp from source for the Pi's CPU</div>
+    </div>
+    <div class="kpi">
+      <div class="value">≤7<small>min</small></div>
+      <div class="label">to build on the Pi</div>
+      <div class="note"><code>uv run build.py</code> from scratch; 45 s on the laptop</div>
+    </div>
+  </section>
+
+  <section class="panels">
+    <div class="panel">
+      <h2>Per image on the Raspberry Pi 5 <span>· seconds</span></h2>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--cool-soft)"></span>PyTorch</span>
+        <span><span class="sw" style="background:var(--accent)"></span>llama.cpp (source build)</span>
+        <span><span class="sw" style="background:rgba(43,138,62,.25)"></span>1–2 s target</span>
+      </div>
+      <!-- scale: 15 s = 100% -->
+      <div class="rows" style="gap:14px">
+        <div class="row">
+          <div class="name"><b>Qwen3.5-0.8B</b> · bf16<i>PyTorch, 640 px</i></div>
+          <div class="track"><div class="bar dnf"></div></div>
+          <div class="t">&gt;11 min</div>
+        </div>
+        <div class="row">
+          <div class="name"><b>Qwen3.5-0.8B</b> · fp32<i>PyTorch, 640 px</i></div>
+          <div class="track"><div class="target-band" style="left:6.67%;width:6.67%"></div><div class="bar" style="width:93%"></div></div>
+          <div class="t">13–15</div>
+        </div>
+        <div class="row">
+          <div class="name"><b>Qwen3.5-0.8B</b> · fp32<i>PyTorch, 320 px</i></div>
+          <div class="track"><div class="target-band" style="left:6.67%;width:6.67%"></div><div class="bar" style="width:37%"></div></div>
+          <div class="t">5.5</div>
+        </div>
+        <div class="row">
+          <div class="name"><b>Qwen3.5-0.8B</b> · Q8<i>llama.cpp, 640 px, all image tokens</i></div>
+          <div class="track"><div class="target-band" style="left:6.67%;width:6.67%"></div><div class="bar win" style="width:50%;opacity:.45"></div></div>
+          <div class="t">7.5</div>
+        </div>
+        <div class="row">
+          <div class="name"><b>Qwen3.5-0.8B</b> · Q8<i>llama.cpp, 64 image tokens</i></div>
+          <div class="track"><div class="target-band" style="left:6.67%;width:6.67%"></div><div class="bar win" style="width:12.3%"></div></div>
+          <div class="t win">1.8</div>
+        </div>
+        <div class="row">
+          <div class="name"><b>LFM2.5-VL-450M</b> · Q8<i>llama.cpp, 256 px · default</i></div>
+          <div class="track"><div class="target-band" style="left:6.67%;width:6.67%"></div><div class="bar win" style="width:8.2%"></div></div>
+          <div class="t win">1.2</div>
+        </div>
+      </div>
+      <div class="foot">
+        PyTorch in bf16 never finished: the Pi's CPU has no bf16 instructions. Almost all the time is the
+        image encoder, so image size sets the speed. Also tried: SmolVLM-500M 7.4 s, LFM2.5-VL-1.6B 106 s.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Source build vs Homebrew <span>· Pi 5, llama.cpp</span></h2>
+      <div class="legend">
+        <span><span class="sw" style="background:var(--accent)"></span>source, <code>-march=native</code></span>
+        <span><span class="sw" style="background:var(--cool)"></span>Homebrew bottle</span>
+      </div>
+      <!-- scale: 3 s = 100% -->
+      <div class="rows" style="gap:14px">
+        <div class="group">
+          <div class="name">LFM2.5-VL-450M · 256 px</div>
+          <div class="pair"><span>source</span><div class="track"><div class="bar win" style="width:43%"></div></div><span class="t">1.3 s</span></div>
+          <div class="pair"><span>Homebrew</span><div class="track"><div class="bar" style="width:70%;background:var(--cool)"></div></div><span class="t">2.1 s</span></div>
+        </div>
+        <div class="group">
+          <div class="name">LFM2.5-VL-450M · 256 px · 8-bit encoder</div>
+          <div class="pair"><span>source</span><div class="track"><div class="bar win" style="width:40%"></div></div><span class="t">1.2 s</span></div>
+          <div class="pair"><span>Homebrew</span><div class="track"><div class="bar" style="width:53%;background:var(--cool)"></div></div><span class="t">1.6 s</span></div>
+        </div>
+        <div class="group">
+          <div class="name">Qwen3.5-0.8B · 64 image tokens</div>
+          <div class="pair"><span>source</span><div class="track"><div class="bar win" style="width:57%"></div></div><span class="t">1.7 s</span></div>
+          <div class="pair"><span>Homebrew</span><div class="track"><div class="bar" style="width:87%;background:var(--cool)"></div></div><span class="t">2.6 s</span></div>
+        </div>
+      </div>
+      <div class="foot">
+        Each pair was run back to back. Same answers from both. Not OpenBLAS and not the CPU variant: most likely the generic ARM kernels.
+        Homebrew also needs its own glibc and <code>g++-16</code>, so it saved no setup.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Laptop vs Pi 5</h2>
+      <div class="split">
+        <span></span><span class="h">laptop</span><span class="h">Pi 5</span>
+        <span class="k">Build llama.cpp + scorer<i><code>build.py</code>, from scratch</i></span>
+        <span class="v">45 s</span><span class="v pi">≤7 min</span>
+        <hr>
+        <span class="k">LFM2.5-VL-450M<i>llama.cpp, 256 px</i></span>
+        <span class="v">0.3 s</span><span class="v pi">1.2 s</span>
+        <span class="k">Qwen3.5-0.8B<i>llama.cpp, 64 image tokens</i></span>
+        <span class="v">0.45 s</span><span class="v pi">1.8 s</span>
+        <span class="k">Qwen3.5-0.8B<i>PyTorch, 640 px</i></span>
+        <span class="v">0.8 s</span><span class="v pi">13–15 s</span>
+        <hr>
+        <span class="k">Model load<i>LFM2.5-VL-450M, once per process</i></span>
+        <span class="v">0.2 s</span><span class="v pi">0.9 s</span>
+      </div>
+      <div class="foot">
+        The Pi is ~4× slower on llama.cpp, but ~17× slower on PyTorch.
+        A one-shot PyTorch run on the laptop takes ~8 s, of which only ~2 s is inference:
+        keep the model loaded.
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span><b>Answers:</b> both models get both test images right (skier → <span class="ok">person</span>, two cats → <span class="ok">none</span>). Only LFM2.5 keeps its answers when the options are reordered.</span>
+    <span>Caveat: 2 COCO images only. Pi timings taken with a camera service running.</span>
+  </footer>
+</main>
+</body>
+</html>
